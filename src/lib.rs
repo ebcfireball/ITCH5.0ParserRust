@@ -269,7 +269,7 @@ impl<R:Read> MsgStream<R> {
                         }
                     }
                 } else if order.typ == Some(67) {
-                    //C order executed do something
+                    //C
                     if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf){
                         if bids[index].shares - order.executed_shares.unwrap()==0{
                             bids.remove(index);
@@ -285,7 +285,7 @@ impl<R:Read> MsgStream<R> {
                         }
                     }
                 } else if order.typ == Some(69) {
-                    //E order executed do something
+                    //E
                     if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf){
                         if bids[index].shares - order.executed_shares.unwrap()==0{
                             bids.remove(index);
@@ -322,7 +322,6 @@ impl<R:Read> MsgStream<R> {
                 bids.sort_by_key(|ord| ord.price);
                 bids.reverse();
                 asks.sort_by_key(|ord| ord.price);
-                //go back to how it was with the 
                 if bids.len()>0 && asks.len()>0{
                     order.ask = Some(asks[0].price);
                     order.bid = Some(bids[0].price);
