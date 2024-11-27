@@ -13,13 +13,12 @@ pub struct MsgStream<R> {
     pub reader: R,
     pub buffer: VecDeque<u8>,
     pub read_calls: u32,
-    pub message_ct: u32,
-    pub companies: HashMap<u16, Vec<A>>,
-    pub error: bool,
+    pub message_ct: u64,
+    pub companies: HashMap<u16, Vec<Message>>,
 }
 
-#[derive(Serialize)]
-pub struct A {
+#[derive(Serialize, Clone, Copy)]
+pub struct Message {
     pub typ: Option<u8>,
     pub timestamp: Option<u64>,
     pub orrf: Option<u64>,
@@ -56,35 +55,28 @@ impl<R: Read> MsgStream<R> {
             companies: HashMap::new(),
             read_calls: 0,
             message_ct: 0,
-            error: false,
         }
     }
-    pub fn process_bytes(&mut self) -> Result<()> {
-        let mut temp_buffer = vec![0; BUFSIZE];
-        let mut bytes_read = self.reader.read(&mut temp_buffer)?;
-        self.buffer.extend(&temp_buffer[..bytes_read]);
-        self.read_calls += 1;
-
+    pub fn process_bytes(&mut self, locates: Vec<u16>) -> Result<()> {
         loop {
-            let curr = self.buffer.pop_front();
-            if self.buffer.len() < 60 {
-                if self.read_calls > 5500 {
+            if self.buffer.len() < 100 {
+                let bytes_read = self.fetch_bytes()?;
+                if bytes_read == 0 || self.read_calls > 300000 {
+                    print!("{bytes_read}");
                     break;
                 }
-                bytes_read = self.reader.read(&mut temp_buffer)?;
-                if bytes_read == 0 {
-                    break;
-                }
-                self.buffer.extend(&temp_buffer[..bytes_read]);
-                self.read_calls += 1;
             }
 
+            let curr = self.buffer.pop_front();
             self.message_ct += 1;
 
             if curr == Some(88u8) {
                 //X
                 let mut data = self.buffer.drain(..24);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -110,50 +102,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(88),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    cancelled_shares: Some(cancelled_shares),
+                    buy_sell: None,
+                    shares: None,
+                    price: None,
+                    executed_price: None,
+                    executed_shares: None,
+                    new_orff: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(88),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            cancelled_shares: Some(cancelled_shares),
-                            buy_sell: None,
-                            shares: None,
-                            price: None,
-                            executed_price: None,
-                            executed_shares: None,
-                            new_orff: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(88),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        cancelled_shares: Some(cancelled_shares),
-                        buy_sell: None,
-                        shares: None,
-                        price: None,
-                        executed_price: None,
-                        executed_shares: None,
-                        new_orff: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(65u8) {
                 //A
                 let mut data = self.buffer.drain(..37);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -187,50 +164,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(65),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    buy_sell: Some(buy_sell),
+                    shares: Some(shares),
+                    price: Some(price),
+                    executed_price: None,
+                    executed_shares: None,
+                    new_orff: None,
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(65),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            buy_sell: Some(buy_sell),
-                            shares: Some(shares),
-                            price: Some(price),
-                            executed_price: None,
-                            executed_shares: None,
-                            new_orff: None,
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(65),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        buy_sell: Some(buy_sell),
-                        shares: Some(shares),
-                        price: Some(price),
-                        executed_price: None,
-                        executed_shares: None,
-                        new_orff: None,
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(80u8) {
                 //P
                 let mut data = self.buffer.drain(..45);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -264,50 +226,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(80),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    buy_sell: Some(buy_sell),
+                    shares: Some(shares),
+                    price: Some(price),
+                    executed_price: None,
+                    executed_shares: None,
+                    new_orff: None,
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(80),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            buy_sell: Some(buy_sell),
-                            shares: Some(shares),
-                            price: Some(price),
-                            executed_price: None,
-                            executed_shares: None,
-                            new_orff: None,
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(80),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        buy_sell: Some(buy_sell),
-                        shares: Some(shares),
-                        price: Some(price),
-                        executed_price: None,
-                        executed_shares: None,
-                        new_orff: None,
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(85u8) {
                 //U
                 let mut data = self.buffer.drain(..36);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -349,50 +296,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(85),
+                    timestamp: Some(timestamp),
+                    orrf: Some(og_orn),
+                    buy_sell: None,
+                    shares: Some(shares),
+                    price: Some(price),
+                    executed_price: None,
+                    executed_shares: None,
+                    new_orff: Some(new_orn),
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(85),
-                            timestamp: Some(timestamp),
-                            orrf: Some(og_orn),
-                            buy_sell: None,
-                            shares: Some(shares),
-                            price: Some(price),
-                            executed_price: None,
-                            executed_shares: None,
-                            new_orff: Some(new_orn),
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(85),
-                        timestamp: Some(timestamp),
-                        orrf: Some(og_orn),
-                        buy_sell: None,
-                        shares: Some(shares),
-                        price: Some(price),
-                        executed_price: None,
-                        executed_shares: None,
-                        new_orff: Some(new_orn),
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(69u8) {
                 //E
                 let mut data = self.buffer.drain(..32);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -418,50 +350,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(69),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    buy_sell: None,
+                    shares: None,
+                    price: None,
+                    executed_price: None,
+                    executed_shares: Some(executed_shares),
+                    new_orff: None,
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(69),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            buy_sell: None,
-                            shares: None,
-                            price: None,
-                            executed_price: None,
-                            executed_shares: Some(executed_shares),
-                            new_orff: None,
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(69),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        buy_sell: None,
-                        shares: None,
-                        price: None,
-                        executed_price: None,
-                        executed_shares: Some(executed_shares),
-                        new_orff: None,
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(67u8) {
                 //C
                 let mut data = self.buffer.drain(..37);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -494,50 +411,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(67),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    buy_sell: None,
+                    shares: None,
+                    price: None,
+                    executed_price: Some(executed_price),
+                    executed_shares: Some(executed_shares),
+                    new_orff: None,
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(67),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            buy_sell: None,
-                            shares: None,
-                            price: None,
-                            executed_price: Some(executed_price),
-                            executed_shares: Some(executed_shares),
-                            new_orff: None,
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(67),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        buy_sell: None,
-                        shares: None,
-                        price: None,
-                        executed_price: Some(executed_price),
-                        executed_shares: Some(executed_shares),
-                        new_orff: None,
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(68u8) {
                 //D
                 let mut data = self.buffer.drain(..20);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -557,50 +459,35 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(68),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    buy_sell: None,
+                    shares: None,
+                    price: None,
+                    executed_price: None,
+                    executed_shares: None,
+                    new_orff: None,
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(68),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            buy_sell: None,
-                            shares: None,
-                            price: None,
-                            executed_price: None,
-                            executed_shares: None,
-                            new_orff: None,
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(68),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        buy_sell: None,
-                        shares: None,
-                        price: None,
-                        executed_price: None,
-                        executed_shares: None,
-                        new_orff: None,
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(70u8) {
                 //F
                 let mut data = self.buffer.drain(..41);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                if !locates.contains(&locate) {
+                    continue;
+                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -634,46 +521,28 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let msg = Message {
+                    bid_depth: None,
+                    ask_depth: None,
+                    depth: None,
+                    spread: None,
+                    bid: None,
+                    ask: None,
+                    typ: Some(70),
+                    timestamp: Some(timestamp),
+                    orrf: Some(orn),
+                    buy_sell: Some(buy_sell),
+                    shares: Some(shares),
+                    price: Some(price),
+                    executed_price: None,
+                    executed_shares: None,
+                    new_orff: None,
+                    cancelled_shares: None,
+                };
                 self.companies
                     .entry(locate)
-                    .and_modify(|company| {
-                        company.push(A {
-                            bid_depth: None,
-                            ask_depth: None,
-                            depth: None,
-                            spread: None,
-                            bid: None,
-                            ask: None,
-                            typ: Some(70),
-                            timestamp: Some(timestamp),
-                            orrf: Some(orn),
-                            buy_sell: Some(buy_sell),
-                            shares: Some(shares),
-                            price: Some(price),
-                            executed_price: None,
-                            executed_shares: None,
-                            new_orff: None,
-                            cancelled_shares: None,
-                        })
-                    })
-                    .or_insert(vec![A {
-                        bid_depth: None,
-                        ask_depth: None,
-                        depth: None,
-                        spread: None,
-                        bid: None,
-                        ask: None,
-                        typ: Some(70),
-                        timestamp: Some(timestamp),
-                        orrf: Some(orn),
-                        buy_sell: None,
-                        shares: Some(shares),
-                        price: Some(price),
-                        executed_price: None,
-                        executed_shares: None,
-                        new_orff: None,
-                        cancelled_shares: None,
-                    }]);
+                    .and_modify(|company| company.push(msg))
+                    .or_insert(vec![msg]);
             } else if curr == Some(83u8) {
                 //S
                 self.buffer.drain(..13);
@@ -727,8 +596,10 @@ impl<R: Read> MsgStream<R> {
 
     pub fn fetch_bytes(&mut self) -> Result<usize> {
         self.read_calls += 1;
-        let mut temp_buffer = vec![0; BUFSIZE];
-        Ok(self.reader.read(&mut temp_buffer)?)
+        let mut temp_buffer = [0; BUFSIZE];
+        let bytes_read = self.reader.read(&mut temp_buffer[..])?;
+        self.buffer.extend(&temp_buffer[..bytes_read]);
+        Ok(bytes_read)
     }
 
     pub fn process_order_book(&mut self) -> Result<()> {
