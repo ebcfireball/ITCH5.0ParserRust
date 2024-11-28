@@ -2,6 +2,7 @@ use byteorder::{BigEndian, ByteOrder};
 use csv::Writer;
 use flate2::read::GzDecoder;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::{BufReader, Read, Result};
@@ -61,8 +62,7 @@ impl<R: Read> MsgStream<R> {
         loop {
             if self.buffer.len() < 100 {
                 let bytes_read = self.fetch_bytes()?;
-                if bytes_read == 0 || self.read_calls > 300000 {
-                    print!("{bytes_read}");
+                if bytes_read == 0 {
                     break;
                 }
             }
@@ -604,151 +604,119 @@ impl<R: Read> MsgStream<R> {
 
     pub fn process_order_book(&mut self) -> Result<()> {
         for (_loc, feed) in &mut self.companies {
-            let mut bids: Vec<Order> = vec![];
-            let mut asks: Vec<Order> = vec![];
-            let mut ask_depth = 0;
-            let mut bid_depth = 0;
-            for order in feed {
-                if order.typ == Some(68) {
+            //[price, shares]
+            let mut bids: HashMap<u64, [u32; 2]> = HashMap::new();
+            let mut asks: HashMap<u64, [u32; 2]> = HashMap::new();
+            //{price: shares}
+            let mut bid_spread: BTreeMap<u32, u32> = BTreeMap::new();
+            let mut ask_spread: BTreeMap<u32, u32> = BTreeMap::new();
+            for msg in feed {
+                if msg.typ == Some(68) {
                     //D order delete
-                    if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf) {
-                        bids.remove(index);
+                    let orn = msg.orrf.unwrap();
+                    if bids.contains_key(&orn) {
+                        let order = bids.remove(&orn).unwrap();
+                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= order[1]);
                     } else {
-                        let position = asks.iter().position(|re| Some(re.re) == order.orrf);
-                        asks.remove(position.unwrap());
+                        let order = asks.remove(&orn).unwrap();
+                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= order[1]);
                     }
-                } else if order.typ == Some(65) {
-                    //A add order
-                    if order.buy_sell == Some(66) {
-                        bids.push(Order {
-                            price: order.price.unwrap(),
-                            re: order.orrf.unwrap(),
-                            shares: order.shares.unwrap(),
-                        });
-                        bid_depth += order.shares.unwrap();
+                } else if msg.typ == Some(65) || msg.typ == Some(70) {
+                    //A,F add order
+                    if msg.buy_sell == Some(66) {
+                        bids.insert(msg.orrf.unwrap(), [msg.price.unwrap(), msg.shares.unwrap()]);
+                        bid_spread
+                            .entry(msg.price.unwrap())
+                            .and_modify(|shares| *shares += msg.shares.unwrap())
+                            .or_insert(msg.shares.unwrap());
                     } else {
-                        asks.push(Order {
-                            price: order.price.unwrap(),
-                            re: order.orrf.unwrap(),
-                            shares: order.shares.unwrap(),
-                        });
-                        ask_depth += order.shares.unwrap()
+                        asks.insert(msg.orrf.unwrap(), [msg.price.unwrap(), msg.shares.unwrap()]);
+                        ask_spread
+                            .entry(msg.price.unwrap())
+                            .and_modify(|shares| *shares += msg.shares.unwrap())
+                            .or_insert(msg.shares.unwrap());
                     }
-                } else if order.typ == Some(70) {
-                    //F add order
-                    if order.buy_sell == Some(66) {
-                        bids.push(Order {
-                            price: order.price.unwrap(),
-                            re: order.orrf.unwrap(),
-                            shares: order.shares.unwrap(),
-                        });
-                        bid_depth += order.shares.unwrap();
-                    } else {
-                        asks.push(Order {
-                            price: order.price.unwrap(),
-                            re: order.orrf.unwrap(),
-                            shares: order.shares.unwrap(),
-                        });
-                        ask_depth += order.shares.unwrap();
-                    }
-                } else if order.typ == Some(88) {
+                } else if msg.typ == Some(88) {
                     //X order cancel
-                    if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf) {
-                        if let Some(ord) = bids.get_mut(index) {
-                            ord.shares -= &order.cancelled_shares.unwrap();
-                            bid_depth -= &order.cancelled_shares.unwrap();
-                        }
-                    } else {
-                        let position = asks.iter().position(|re| Some(re.re) == order.orrf);
-                        if let Some(ord) = asks.get_mut(position.unwrap()) {
-                            ord.shares -= &order.cancelled_shares.unwrap();
-                            ask_depth -= &order.cancelled_shares.unwrap();
-                        }
+                    if bids.contains_key(&msg.orrf.unwrap()){
+                        let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
+                        order[1] -= msg.cancelled_shares.unwrap();
+                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
+                    }else{
+                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
+                        order[1] -= msg.cancelled_shares.unwrap();
+                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
                     }
-                } else if order.typ == Some(67) {
-                    //C
-                    if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf) {
-                        bid_depth -= &order.executed_shares.unwrap();
-                        if bids[index].shares - order.executed_shares.unwrap() == 0 {
-                            bids.remove(index);
-                        } else {
-                            bids[index].shares =
-                                bids[index].shares - order.executed_shares.unwrap();
-                        }
+                } else if msg.typ == Some(67) {
+                    //C order executed with price
+                    if bids.contains_key(&msg.orrf.unwrap()){
+                        let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
+                        order[1] -= msg.executed_shares.unwrap();
+                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
+                    }else{
+                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
+                        order[1] -= msg.executed_shares.unwrap();
+                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
                     }
-                    if let Some(index) = asks.iter().position(|re| Some(re.re) == order.orrf) {
-                        ask_depth -= &order.executed_shares.unwrap();
-                        if asks[index].shares - order.executed_shares.unwrap() == 0 {
-                            asks.remove(index);
-                        } else {
-                            asks[index].shares =
-                                asks[index].shares - order.executed_shares.unwrap();
-                        }
+                } else if msg.typ == Some(69) {
+                    //E order executed
+                    if bids.contains_key(&msg.orrf.unwrap()){
+                        let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
+                        order[1] -= msg.executed_shares.unwrap();
+                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
+                    }else{
+                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
+                        order[1] -= msg.executed_shares.unwrap();
+                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
                     }
-                } else if order.typ == Some(69) {
-                    //E
-                    if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf) {
-                        bid_depth -= &order.executed_shares.unwrap();
-                        if bids[index].shares - order.executed_shares.unwrap() == 0 {
-                            bids.remove(index);
-                        } else {
-                            bids[index].shares =
-                                bids[index].shares - order.executed_shares.unwrap();
-                        }
-                    }
-                    if let Some(index) = asks.iter().position(|re| Some(re.re) == order.orrf) {
-                        ask_depth -= &order.executed_shares.unwrap();
-                        if asks[index].shares - order.executed_shares.unwrap() == 0 {
-                            asks.remove(index);
-                        } else {
-                            asks[index].shares =
-                                asks[index].shares - order.executed_shares.unwrap();
-                        }
-                    }
-                } else if order.typ == Some(85) {
+                } else if msg.typ == Some(85) {
                     //U order replace
-                    if let Some(index) = bids.iter().position(|re| Some(re.re) == order.orrf) {
-                        if let Some(ord) = bids.get_mut(index) {
-                            bid_depth += &ord.shares - &order.shares.unwrap();
-                            ord.price = order.price.unwrap();
-                            ord.shares = order.shares.unwrap();
-                            ord.re = order.new_orff.unwrap();
-                        }
-                    } else {
-                        let position = asks.iter().position(|re| Some(re.re) == order.orrf);
-                        if let Some(ord) = asks.get_mut(position.unwrap()) {
-                            ask_depth += &ord.shares - &order.shares.unwrap();
-                            ord.price = order.price.unwrap();
-                            ord.shares = order.shares.unwrap();
-                            ord.re = order.new_orff.unwrap();
-                        }
+                    if bids.contains_key(&msg.orrf.unwrap()){
+                        let del = bids.remove(&msg.orrf.unwrap()).unwrap();
+                        bid_spread.entry(del[0]).and_modify(|shares| *shares -= del[1]);
+                        bids.insert(msg.new_orff.unwrap(), [msg.price.unwrap(),msg.shares.unwrap()]);
+                        bid_spread.entry(msg.price.unwrap()).and_modify(|shares| *shares += msg.shares.unwrap()).or_insert(msg.shares.unwrap());
+                    }else{
+                        let del = asks.remove(&msg.orrf.unwrap()).unwrap();
+                        ask_spread.entry(del[0]).and_modify(|shares| *shares -= del[1]);
+                        asks.insert(msg.new_orff.unwrap(), [msg.price.unwrap(),msg.shares.unwrap()]);
+                        ask_spread.entry(msg.price.unwrap()).and_modify(|shares| *shares += msg.shares.unwrap()).or_insert(msg.shares.unwrap());
                     }
-                } else if order.typ == Some(80) {
+                } else if msg.typ == Some(80) {
                     //P trade message do something
                 }
-                bids.sort_by_key(|ord| ord.price);
-                bids.reverse();
-                asks.sort_by_key(|ord| ord.price);
-                if bids.len() > 0 && asks.len() > 0 {
-                    order.ask = Some(asks[0].price);
-                    order.bid = Some(bids[0].price);
-                    order.spread = Some(asks[0].price - bids[0].price);
-                } else if bids.len() > 0 && asks.len() == 0 {
-                    order.ask = Some(0);
-                    order.bid = Some(bids[0].price);
-                    order.spread = Some(bids[0].price);
-                } else if bids.len() == 0 && asks.len() > 0 {
-                    order.ask = Some(asks[0].price);
-                    order.bid = Some(0);
-                    order.spread = Some(asks[0].price);
-                } else {
-                    order.bid = Some(0);
-                    order.ask = Some(0);
-                    order.spread = Some(0);
+                let mut bid:u32 = 0;
+                let mut ask: u32 = 0;
+                let mut bid_depth: u32 = 0;
+                let mut ask_depth: u32 = 0;
+
+                if bid_spread.len()>0{
+                    bid_depth = bid_spread.values().cloned().sum();
+                    let bid_clone = bid_spread.clone();
+                    for (k,v) in bid_clone{
+                        if v>0{
+                            bid = k;
+                            break;
+                        }
+                    }
                 }
-                order.ask_depth = Some(ask_depth);
-                order.bid_depth = Some(bid_depth);
-                order.depth = Some(ask_depth + bid_depth);
+                if ask_spread.len()>0{
+                    ask_depth = ask_spread.values().cloned().sum();
+                    let ask_clone = ask_spread.clone();
+                    for (k,v) in ask_clone.iter().rev(){
+                        if v>&0{
+                            ask = *k;
+                            break;
+                        }
+                    }
+                }
+
+                msg.bid = Some(bid);
+                msg.ask = Some(ask);
+                msg.spread = Some(ask-bid);
+                msg.bid_depth = Some(bid_depth);
+                msg.ask_depth = Some(ask_depth);
+                msg.depth = Some(bid_depth+ ask_depth);
             }
         }
         Ok(())
@@ -756,7 +724,7 @@ impl<R: Read> MsgStream<R> {
 
     pub fn write_companies(&mut self) -> Result<()> {
         for (loc, feed) in &self.companies {
-            let mut wtr = Writer::from_path(format!("data/{}oct302019.csv", loc))?;
+            let mut wtr = Writer::from_path(format!("data/{}oct302019.csv", loc+1))?;
             for msg in feed {
                 wtr.serialize(msg)?;
             }
