@@ -14,7 +14,7 @@ pub struct MsgStream<R> {
     pub reader: R,
     pub buffer: VecDeque<u8>,
     pub read_calls: u32,
-    pub message_ct: u64,
+    pub message_ct: usize,
     pub companies: HashMap<u16, Vec<Message>>,
 }
 
@@ -36,12 +36,6 @@ pub struct Message {
     pub ask_depth: Option<u32>,
     pub bid_depth: Option<u32>,
     pub depth: Option<u32>,
-}
-
-pub struct Order {
-    pub price: u32,
-    pub re: u64,
-    pub shares: u32,
 }
 
 impl<R: Read> MsgStream<R> {
@@ -724,7 +718,7 @@ impl<R: Read> MsgStream<R> {
 
     pub fn write_companies(&mut self) -> Result<()> {
         for (loc, feed) in &self.companies {
-            let mut wtr = Writer::from_path(format!("data/{}oct302019.csv", loc+1))?;
+            let mut wtr = Writer::from_path(format!("data/{}oct302019.csv", loc))?;
             for msg in feed {
                 wtr.serialize(msg)?;
             }
