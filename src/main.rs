@@ -1,4 +1,3 @@
-extern crate nom;
 use itch_parser::MsgStream;
 use std::io::{self};
 use std::time::Instant;
