@@ -2,6 +2,7 @@ use byteorder::{BigEndian, ByteOrder};
 use csv::Writer;
 use flate2::read::GzDecoder;
 use serde::Serialize;
+use core::str;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -125,6 +126,9 @@ impl<R: Read> MsgStream<R> {
                 if !locates.contains(&locate) {
                     continue;
                 }
+                //
+                //let tracking_num = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
+                //
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -158,6 +162,7 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                //print!("A ,{locate} ,{tracking_num} ,{timestamp} ,{orn} ,{buy_sell} ,{shares} ,AAPL ,{price} ");
                 let msg = Message {
                     bid_depth: None,
                     ask_depth: None,
@@ -319,6 +324,7 @@ impl<R: Read> MsgStream<R> {
                 if !locates.contains(&locate) {
                     continue;
                 }
+                //let tracking_num = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -344,6 +350,18 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                //let match_num = BigEndian::read_u64(&[
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                //]);
+
+                //print!("E ,{locate} ,{tracking_num} ,{timestamp} ,{orn} ,{executed_shares} ,{match_num} ");
                 let msg = Message {
                     bid_depth: None,
                     ask_depth: None,
@@ -373,6 +391,7 @@ impl<R: Read> MsgStream<R> {
                 if !locates.contains(&locate) {
                     continue;
                 }
+                //let tracking_num = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -398,6 +417,17 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                //let match_num = BigEndian::read_u64(&[
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                    //data.next().unwrap(),
+                //]);
+                //let printable = data.next().unwrap() as char;
                 data.nth(8);
                 let executed_price = BigEndian::read_u32(&[
                     data.next().unwrap(),
@@ -405,6 +435,7 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                //print!("C ,{locate} ,{tracking_num} ,{timestamp} ,{orn} ,{executed_shares} ,{match_num} ,{printable} ,{executed_price} ");
                 let msg = Message {
                     bid_depth: None,
                     ask_depth: None,
@@ -610,10 +641,14 @@ impl<R: Read> MsgStream<R> {
                     let orn = msg.orrf.unwrap();
                     if bids.contains_key(&orn) {
                         let order = bids.remove(&orn).unwrap();
-                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= order[1]);
+                        bid_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= order[1]);
                     } else {
                         let order = asks.remove(&orn).unwrap();
-                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= order[1]);
+                        ask_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= order[1]);
                     }
                 } else if msg.typ == Some(65) || msg.typ == Some(70) {
                     //A,F add order
@@ -632,74 +667,102 @@ impl<R: Read> MsgStream<R> {
                     }
                 } else if msg.typ == Some(88) {
                     //X order cancel
-                    if bids.contains_key(&msg.orrf.unwrap()){
+                    if bids.contains_key(&msg.orrf.unwrap()) {
                         let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.cancelled_shares.unwrap();
-                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
-                    }else{
+                        bid_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
+                    } else {
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.cancelled_shares.unwrap();
-                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
+                        ask_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
                     }
                 } else if msg.typ == Some(67) {
                     //C order executed with price
-                    if bids.contains_key(&msg.orrf.unwrap()){
+                    if bids.contains_key(&msg.orrf.unwrap()) {
                         let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
-                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
-                    }else{
+                        bid_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= msg.executed_shares.unwrap());
+                    } else {
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
-                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
+                        ask_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= msg.executed_shares.unwrap());
                     }
                 } else if msg.typ == Some(69) {
                     //E order executed
-                    if bids.contains_key(&msg.orrf.unwrap()){
+                    if bids.contains_key(&msg.orrf.unwrap()) {
                         let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
-                        bid_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
-                    }else{
+                        bid_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= msg.executed_shares.unwrap());
+                    } else {
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
-                        ask_spread.entry(order[0]).and_modify(|shares| *shares -= msg.executed_shares.unwrap());
+                        ask_spread
+                            .entry(order[0])
+                            .and_modify(|shares| *shares -= msg.executed_shares.unwrap());
                     }
                 } else if msg.typ == Some(85) {
                     //U order replace
-                    if bids.contains_key(&msg.orrf.unwrap()){
+                    if bids.contains_key(&msg.orrf.unwrap()) {
                         let del = bids.remove(&msg.orrf.unwrap()).unwrap();
-                        bid_spread.entry(del[0]).and_modify(|shares| *shares -= del[1]);
-                        bids.insert(msg.new_orff.unwrap(), [msg.price.unwrap(),msg.shares.unwrap()]);
-                        bid_spread.entry(msg.price.unwrap()).and_modify(|shares| *shares += msg.shares.unwrap()).or_insert(msg.shares.unwrap());
-                    }else{
+                        bid_spread
+                            .entry(del[0])
+                            .and_modify(|shares| *shares -= del[1]);
+                        bids.insert(
+                            msg.new_orff.unwrap(),
+                            [msg.price.unwrap(), msg.shares.unwrap()],
+                        );
+                        bid_spread
+                            .entry(msg.price.unwrap())
+                            .and_modify(|shares| *shares += msg.shares.unwrap())
+                            .or_insert(msg.shares.unwrap());
+                    } else {
                         let del = asks.remove(&msg.orrf.unwrap()).unwrap();
-                        ask_spread.entry(del[0]).and_modify(|shares| *shares -= del[1]);
-                        asks.insert(msg.new_orff.unwrap(), [msg.price.unwrap(),msg.shares.unwrap()]);
-                        ask_spread.entry(msg.price.unwrap()).and_modify(|shares| *shares += msg.shares.unwrap()).or_insert(msg.shares.unwrap());
+                        ask_spread
+                            .entry(del[0])
+                            .and_modify(|shares| *shares -= del[1]);
+                        asks.insert(
+                            msg.new_orff.unwrap(),
+                            [msg.price.unwrap(), msg.shares.unwrap()],
+                        );
+                        ask_spread
+                            .entry(msg.price.unwrap())
+                            .and_modify(|shares| *shares += msg.shares.unwrap())
+                            .or_insert(msg.shares.unwrap());
                     }
                 } else if msg.typ == Some(80) {
                     //P trade message do something
                 }
-                let mut bid:u32 = 0;
+                let mut bid: u32 = 0;
                 let mut ask: u32 = 0;
                 let mut bid_depth: u32 = 0;
                 let mut ask_depth: u32 = 0;
 
-                if bid_spread.len()>0{
+                if bid_spread.len() > 0 {
                     bid_depth = bid_spread.values().cloned().sum();
                     let bid_clone = bid_spread.clone();
-                    for (k,v) in bid_clone{
-                        if v>0{
-                            bid = k;
+                    for (k, v) in bid_clone.iter().rev() {
+                        if v > &0 {
+                            bid = *k;
                             break;
                         }
                     }
                 }
-                if ask_spread.len()>0{
+                if ask_spread.len() > 0 {
                     ask_depth = ask_spread.values().cloned().sum();
                     let ask_clone = ask_spread.clone();
-                    for (k,v) in ask_clone.iter().rev(){
-                        if v>&0{
-                            ask = *k;
+                    for (k, v) in ask_clone {
+                        if v > 0 {
+                            ask = k;
                             break;
                         }
                     }
@@ -707,10 +770,10 @@ impl<R: Read> MsgStream<R> {
 
                 msg.bid = Some(bid);
                 msg.ask = Some(ask);
-                msg.spread = Some(ask-bid);
+                msg.spread = Some(ask - bid);
                 msg.bid_depth = Some(bid_depth);
                 msg.ask_depth = Some(ask_depth);
-                msg.depth = Some(bid_depth+ ask_depth);
+                msg.depth = Some(bid_depth + ask_depth);
             }
         }
         Ok(())
