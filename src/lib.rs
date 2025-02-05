@@ -2,12 +2,12 @@ use byteorder::{BigEndian, ByteOrder};
 use csv::Writer;
 use flate2::read::GzDecoder;
 use serde::Serialize;
-use core::str;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::{BufReader, Read, Result};
 use std::{fs::File, path::Path};
+// monthdayyear
 
 pub const BUFSIZE: usize = 65536;
 
@@ -17,6 +17,7 @@ pub struct MsgStream<R> {
     pub read_calls: u32,
     pub message_ct: usize,
     pub companies: HashMap<u16, Vec<Message>>,
+    pub loc_to_ticker: HashMap<u16, String>,
 }
 
 #[derive(Serialize, Clone, Copy)]
@@ -51,9 +52,10 @@ impl<R: Read> MsgStream<R> {
             companies: HashMap::new(),
             read_calls: 0,
             message_ct: 0,
+            loc_to_ticker: HashMap::new(),
         }
     }
-    pub fn process_bytes(&mut self, locates: Vec<u16>) -> Result<()> {
+    pub fn process_bytes(&mut self, focused_names: Vec<&str>) -> Result<()> {
         loop {
             if self.buffer.len() < 100 {
                 let bytes_read = self.fetch_bytes()?;
@@ -64,12 +66,13 @@ impl<R: Read> MsgStream<R> {
 
             let curr = self.buffer.pop_front();
             self.message_ct += 1;
+            //println!("{},{}", self.loc_to_ticker.len(), self.companies.len());
 
             if curr == Some(88u8) {
                 //X
                 let mut data = self.buffer.drain(..24);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
+                if !self.loc_to_ticker.contains_key(&locate){
                     continue;
                 }
                 data.nth(1);
@@ -123,9 +126,6 @@ impl<R: Read> MsgStream<R> {
                 //A
                 let mut data = self.buffer.drain(..37);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
-                    continue;
-                }
                 //
                 //let tracking_num = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
                 //
@@ -155,13 +155,27 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
-                data.nth(7);
+                let ticker = vec![
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                ];
                 let price = BigEndian::read_u32(&[
                     data.next().unwrap(),
                     data.next().unwrap(),
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
+                let temp_string = String::from_utf8(ticker).unwrap();
+                if !focused_names.contains(&temp_string.trim()){
+                    continue;
+                }
+                self.loc_to_ticker.entry(locate).or_insert(temp_string.trim().to_string());
                 //print!("A ,{locate} ,{tracking_num} ,{timestamp} ,{orn} ,{buy_sell} ,{shares} ,AAPL ,{price} ");
                 let msg = Message {
                     bid_depth: None,
@@ -189,9 +203,6 @@ impl<R: Read> MsgStream<R> {
                 //P
                 let mut data = self.buffer.drain(..45);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
-                    continue;
-                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -218,7 +229,21 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
-                data.nth(7);
+                let ticker = vec![
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                ];
+                let temp_string = String::from_utf8(ticker).unwrap();
+                if !focused_names.contains(&temp_string.trim()){
+                    continue;
+                }
+                self.loc_to_ticker.entry(locate).or_insert(temp_string.trim().to_string());
                 let price = BigEndian::read_u32(&[
                     data.next().unwrap(),
                     data.next().unwrap(),
@@ -251,7 +276,7 @@ impl<R: Read> MsgStream<R> {
                 //U
                 let mut data = self.buffer.drain(..36);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
+                if !self.loc_to_ticker.contains_key(&locate){
                     continue;
                 }
                 data.nth(1);
@@ -321,7 +346,7 @@ impl<R: Read> MsgStream<R> {
                 //E
                 let mut data = self.buffer.drain(..32);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
+                if !self.loc_to_ticker.contains_key(&locate){
                     continue;
                 }
                 //let tracking_num = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
@@ -351,14 +376,14 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                 ]);
                 //let match_num = BigEndian::read_u64(&[
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
                 //]);
 
                 //print!("E ,{locate} ,{tracking_num} ,{timestamp} ,{orn} ,{executed_shares} ,{match_num} ");
@@ -388,7 +413,7 @@ impl<R: Read> MsgStream<R> {
                 //C
                 let mut data = self.buffer.drain(..37);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
+                if !self.loc_to_ticker.contains_key(&locate){
                     continue;
                 }
                 //let tracking_num = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
@@ -418,14 +443,14 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                 ]);
                 //let match_num = BigEndian::read_u64(&[
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
-                    //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
+                //data.next().unwrap(),
                 //]);
                 //let printable = data.next().unwrap() as char;
                 data.nth(8);
@@ -462,7 +487,7 @@ impl<R: Read> MsgStream<R> {
                 //D
                 let mut data = self.buffer.drain(..20);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
+                if !self.loc_to_ticker.contains_key(&locate){
                     continue;
                 }
                 data.nth(1);
@@ -510,9 +535,6 @@ impl<R: Read> MsgStream<R> {
                 //F
                 let mut data = self.buffer.drain(..41);
                 let locate = BigEndian::read_u16(&[data.next().unwrap(), data.next().unwrap()]);
-                if !locates.contains(&locate) {
-                    continue;
-                }
                 data.nth(1);
                 let timestamp = BigEndian::read_u48(&[
                     data.next().unwrap(),
@@ -539,7 +561,21 @@ impl<R: Read> MsgStream<R> {
                     data.next().unwrap(),
                     data.next().unwrap(),
                 ]);
-                data.nth(7);
+                let ticker = vec![
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                    data.next().unwrap(),
+                ];
+                let temp_string = String::from_utf8(ticker).unwrap();
+                if !focused_names.contains(&temp_string.trim()){
+                    continue;
+                }
+                self.loc_to_ticker.entry(locate).or_insert(temp_string.trim().to_string());
                 let price = BigEndian::read_u32(&[
                     data.next().unwrap(),
                     data.next().unwrap(),
@@ -767,7 +803,6 @@ impl<R: Read> MsgStream<R> {
                         }
                     }
                 }
-
                 msg.bid = Some(bid);
                 msg.ask = Some(ask);
                 msg.spread = Some(ask - bid);
@@ -779,12 +814,15 @@ impl<R: Read> MsgStream<R> {
         Ok(())
     }
 
-    pub fn write_companies(&mut self) -> Result<()> {
+    pub fn write_companies(&mut self, date:&str) -> Result<()> {
         for (loc, feed) in &self.companies {
-            let mut wtr = Writer::from_path(format!("data/{}oct302019.csv", loc))?;
-            for msg in feed {
-                wtr.serialize(msg)?;
-            }
+                println!("writing to {}", loc);
+                let name = self.loc_to_ticker.get(loc).unwrap();
+                //let mut wtr = Writer::from_path(format!("data/{date}/{name}.csv"))?;
+                let mut wtr = Writer::from_path(format!("data/{name}{date}.csv"))?;
+                for msg in feed {
+                    wtr.serialize(msg)?;
+                }
         }
         Ok(())
     }
