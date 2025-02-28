@@ -74,12 +74,15 @@ impl<R: Read> MsgStream<R> {
     }
 
     pub fn process_bytes(&mut self) -> Result<()> {
+        let _a = self.read_all_bytes_in();
         loop {
             if self.buffer.len() < 100 {
+                /* 
                 let bytes_read = self.fetch_bytes()?;
-                if bytes_read == 0 {
+                if bytes_read == 0 || bytes_read < 50{
                     break;
-                }
+                }*/
+                break;
             }
 
             let curr = self.buffer.pop_front();
@@ -911,7 +914,11 @@ impl<R: Read> MsgStream<R> {
                             }
                         }
                     } else {
-                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
+                        let mut ref_ord = [0,0];
+                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap_or(&mut ref_ord);
+                        if order == &mut [0,0]{
+                            continue;
+                        }
                         order[1] -= msg.cancelled_shares.unwrap();
                         ask_spread
                             .entry(order[0])
@@ -996,7 +1003,7 @@ impl<R: Read> MsgStream<R> {
                                 }
                             }
                         }
-                    } else {
+                    } else{
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         ask_spread
@@ -1050,7 +1057,11 @@ impl<R: Read> MsgStream<R> {
                             }
                         }
                     } else {
-                        let del = asks.remove(&msg.orrf.unwrap()).unwrap();
+                        let ref_ord = [0,0];
+                        let del = asks.remove(&msg.orrf.unwrap()).unwrap_or(ref_ord);
+                        if del == [0,0]{
+                            continue;
+                        }
                         ask_spread
                             .entry(del[0])
                             .and_modify(|shares| *shares -= del[1]);
