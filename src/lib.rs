@@ -74,15 +74,13 @@ impl<R: Read> MsgStream<R> {
     }
 
     pub fn process_bytes(&mut self) -> Result<()> {
-        let _a = self.read_all_bytes_in();
+        //let _a = self.read_all_bytes_in();
         loop {
             if self.buffer.len() < 100 {
-                /* 
                 let bytes_read = self.fetch_bytes()?;
-                if bytes_read == 0 || bytes_read < 50{
+                if bytes_read == 0{
                     break;
-                }*/
-                break;
+                }
             }
 
             let curr = self.buffer.pop_front();
@@ -825,8 +823,8 @@ impl<R: Read> MsgStream<R> {
             for msg in feed {
                 if msg.typ == Some(68) {
                     //D order delete, done
-                    let orn = msg.orrf.unwrap();
-                    if bids.contains_key(&orn) {
+                    let orn = &msg.orrf.unwrap();
+                    if bids.contains_key(orn) {
                         let order = bids.remove(&orn).unwrap();
                         bid_spread
                             .entry(order[0])
@@ -835,7 +833,7 @@ impl<R: Read> MsgStream<R> {
                         //bid
                         if order[0] == bid && bid_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price - 100 * i;
                                 if bid_spread.contains_key(&sub) {
                                     if bid_spread.get(&sub).unwrap() > &0 {
@@ -845,11 +843,8 @@ impl<R: Read> MsgStream<R> {
                                 }
                             }
                         }
-                    } else {
-                        let order = asks.remove(&orn).unwrap_or([0, 0]);
-                        if order == [0, 0] {
-                            continue;
-                        }
+                    } else if asks.contains_key(orn){
+                        let order = asks.remove(orn).unwrap();
                         ask_spread
                             .entry(order[0])
                             .and_modify(|shares| *shares -= order[1]);
@@ -857,7 +852,7 @@ impl<R: Read> MsgStream<R> {
                         //ask
                         if order[0] == ask && ask_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price + 100 * i;
                                 if ask_spread.contains_key(&sub) {
                                     if ask_spread.get(&sub).unwrap() > &0 {
@@ -893,8 +888,9 @@ impl<R: Read> MsgStream<R> {
                     }
                 } else if msg.typ == Some(88) {
                     //X order cancel, done
-                    if bids.contains_key(&msg.orrf.unwrap()) {
-                        let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
+                    let orn = &msg.orrf.unwrap();
+                    if bids.contains_key(orn) {
+                        let order = bids.get_mut(orn).unwrap();
                         order[1] -= msg.cancelled_shares.unwrap();
                         bid_spread
                             .entry(order[0])
@@ -903,7 +899,7 @@ impl<R: Read> MsgStream<R> {
                         //bid
                         if order[0] == bid && bid_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price - 100 * i;
                                 if bid_spread.contains_key(&sub) {
                                     if bid_spread.get(&sub).unwrap() > &0 {
@@ -913,12 +909,8 @@ impl<R: Read> MsgStream<R> {
                                 }
                             }
                         }
-                    } else {
-                        let mut ref_ord = [0,0];
-                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap_or(&mut ref_ord);
-                        if order == &mut [0,0]{
-                            continue;
-                        }
+                    } else if asks.contains_key(orn) {
+                        let order = asks.get_mut(orn).unwrap();
                         order[1] -= msg.cancelled_shares.unwrap();
                         ask_spread
                             .entry(order[0])
@@ -927,7 +919,7 @@ impl<R: Read> MsgStream<R> {
                         //ask
                         if order[0] == ask && ask_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price + 100 * i;
                                 if ask_spread.contains_key(&sub) {
                                     if ask_spread.get(&sub).unwrap() > &0 {
@@ -940,8 +932,9 @@ impl<R: Read> MsgStream<R> {
                     }
                 } else if msg.typ == Some(67) {
                     //C order executed with price, done
-                    if bids.contains_key(&msg.orrf.unwrap()) {
-                        let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
+                    let orn = &msg.orrf.unwrap();
+                    if bids.contains_key(orn) {
+                        let order = bids.get_mut(orn).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         bid_spread
                             .entry(order[0])
@@ -950,7 +943,7 @@ impl<R: Read> MsgStream<R> {
                         //bid
                         if order[0] == bid && bid_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price - 100 * i;
                                 if bid_spread.contains_key(&sub) {
                                     if bid_spread.get(&sub).unwrap() > &0 {
@@ -960,8 +953,8 @@ impl<R: Read> MsgStream<R> {
                                 }
                             }
                         }
-                    } else {
-                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
+                    } else if asks.contains_key(orn) {
+                        let order = asks.get_mut(orn).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         ask_spread
                             .entry(order[0])
@@ -970,7 +963,7 @@ impl<R: Read> MsgStream<R> {
                         //ask
                         if order[0] == ask && ask_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price + 100 * i;
                                 if ask_spread.contains_key(&sub) {
                                     if ask_spread.get(&sub).unwrap() > &0 {
@@ -983,8 +976,9 @@ impl<R: Read> MsgStream<R> {
                     }
                 } else if msg.typ == Some(69) {
                     //E order executed, done
-                    if bids.contains_key(&msg.orrf.unwrap()) {
-                        let order = bids.get_mut(&msg.orrf.unwrap()).unwrap();
+                    let orf = &msg.orrf.unwrap();
+                    if bids.contains_key(orf) {
+                        let order = bids.get_mut(orf).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         bid_spread
                             .entry(order[0])
@@ -993,7 +987,7 @@ impl<R: Read> MsgStream<R> {
                         //bid
                         if order[0] == bid && bid_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price - 100 * i;
                                 if bid_spread.contains_key(&sub) {
                                     if bid_spread.get(&sub).unwrap() > &0 {
@@ -1003,8 +997,8 @@ impl<R: Read> MsgStream<R> {
                                 }
                             }
                         }
-                    } else{
-                        let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
+                    } else if asks.contains_key(orf){
+                        let order = asks.get_mut(orf).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         ask_spread
                             .entry(order[0])
@@ -1013,7 +1007,7 @@ impl<R: Read> MsgStream<R> {
                         //ask
                         if order[0] == ask && ask_spread.get(&order[0]).unwrap() == &0 {
                             let ref_price = order[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price + 100 * i;
                                 if ask_spread.contains_key(&sub) {
                                     if ask_spread.get(&sub).unwrap() > &0 {
@@ -1026,8 +1020,9 @@ impl<R: Read> MsgStream<R> {
                     }
                 } else if msg.typ == Some(85) {
                     //U order replace, done
-                    if bids.contains_key(&msg.orrf.unwrap()) {
-                        let del = bids.remove(&msg.orrf.unwrap()).unwrap();
+                    let orn = &msg.orrf.unwrap();
+                    if bids.contains_key(orn) {
+                        let del = bids.remove(orn).unwrap();
                         bid_spread
                             .entry(del[0])
                             .and_modify(|shares| *shares -= del[1]);
@@ -1046,7 +1041,7 @@ impl<R: Read> MsgStream<R> {
                             bid = msg.price.unwrap();
                         } else if del[0] == bid && bid_spread.get(&del[0]).unwrap() == &0 {
                             let ref_price = del[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price - 100 * i;
                                 if bid_spread.contains_key(&sub) {
                                     if bid_spread.get(&sub).unwrap() > &0 {
@@ -1056,12 +1051,8 @@ impl<R: Read> MsgStream<R> {
                                 }
                             }
                         }
-                    } else {
-                        let ref_ord = [0,0];
-                        let del = asks.remove(&msg.orrf.unwrap()).unwrap_or(ref_ord);
-                        if del == [0,0]{
-                            continue;
-                        }
+                    } else if asks.contains_key(orn){
+                        let del = asks.remove(orn).unwrap();
                         ask_spread
                             .entry(del[0])
                             .and_modify(|shares| *shares -= del[1]);
@@ -1080,7 +1071,7 @@ impl<R: Read> MsgStream<R> {
                             ask = msg.price.unwrap();
                         } else if del[0] == ask && ask_spread.get(&del[0]).unwrap() == &0 {
                             let ref_price = del[0];
-                            for i in 1..1000 {
+                            for i in 1..10000 {
                                 let sub = ref_price + 100 * i;
                                 if ask_spread.contains_key(&sub) {
                                     if ask_spread.get(&sub).unwrap() > &0 {

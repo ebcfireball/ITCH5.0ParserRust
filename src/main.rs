@@ -8,6 +8,7 @@ fn main() -> io::Result<()> {
     let start = Instant::now();
     let accepted_year = &args[1];
 
+    //get the dates that have already been parsed
     let mut data_files: Vec<String> = Vec::new();
     let data_folders = std::fs::read_dir("./data")?;
     for folder in data_folders {
@@ -15,6 +16,7 @@ fn main() -> io::Result<()> {
         data_files.push(entry);
     }
 
+    //add the dates that still need to be parsed from that certain year 
     let mut entries: Vec<String> = Vec::new();
     let dir = std::fs::read_dir("./locates")?;
     for file in dir {
@@ -27,6 +29,8 @@ fn main() -> io::Result<()> {
         }
     }
     entries.sort();
+
+    //iterate through dates and parse and make the order book
     for entry in entries {
         let year = entry.get(17..19).unwrap();
         let date = entry.get(19..23).unwrap();
@@ -46,7 +50,7 @@ fn main() -> io::Result<()> {
             //let mut test_read =
                 //MsgStream::from_gz_to_buf(format!("itchdata/S{}-v50.txt.gz", &full_date)).unwrap();
             let mut test_read =
-                MsgStream::from_gz_to_reader(format!("itchdata/S{}-v50.txt.gz", &full_date)).unwrap();
+                MsgStream::from_gz_to_buf(format!("itchdata/S{}-v50.txt.gz", &full_date)).unwrap();
             let _a = test_read.get_locate_codes(dow30, &full_date);
             println!("{:?}", &test_read.loc_to_ticker);
 
@@ -57,11 +61,11 @@ fn main() -> io::Result<()> {
             let _c = test_read.process_order_book2();
             let order_time = Instant::elapsed(&start_file) - process_time;
             println!("{:?}", order_time);
+            let _d = test_read.write_companies(&full_date);
             println!("finished date: {}", full_date);
             std::mem::drop(test_read);
         }
 
-        //let _d = test_read.write_companies(&full_date);
     }
     let finish = Instant::elapsed(&start);
     println!("{:?}", finish);
