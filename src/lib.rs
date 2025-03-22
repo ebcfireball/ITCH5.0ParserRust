@@ -672,7 +672,7 @@ impl<R: Read> MsgStream<R> {
                         bid_spread
                             .entry(order[0])
                             .and_modify(|shares| *shares -= order[1]);
-                    } else {
+                    } else if asks.contains_key(&orn) {
                         let order = asks.remove(&orn).unwrap_or([0, 0]);
                         if order == [0, 0] {
                             continue;
@@ -704,7 +704,7 @@ impl<R: Read> MsgStream<R> {
                         bid_spread
                             .entry(order[0])
                             .and_modify(|shares| *shares -= msg.cancelled_shares.unwrap());
-                    } else {
+                    } else if asks.contains_key(&msg.orrf.unwrap())  {
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.cancelled_shares.unwrap();
                         ask_spread
@@ -719,7 +719,7 @@ impl<R: Read> MsgStream<R> {
                         bid_spread
                             .entry(order[0])
                             .and_modify(|shares| *shares -= msg.executed_shares.unwrap());
-                    } else {
+                    } else if asks.contains_key(&msg.orrf.unwrap()) {
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         ask_spread
@@ -734,7 +734,7 @@ impl<R: Read> MsgStream<R> {
                         bid_spread
                             .entry(order[0])
                             .and_modify(|shares| *shares -= msg.executed_shares.unwrap());
-                    } else {
+                    } else if asks.contains_key(&msg.orrf.unwrap()) {
                         let order = asks.get_mut(&msg.orrf.unwrap()).unwrap();
                         order[1] -= msg.executed_shares.unwrap();
                         ask_spread
@@ -756,7 +756,7 @@ impl<R: Read> MsgStream<R> {
                             .entry(msg.price.unwrap())
                             .and_modify(|shares| *shares += msg.shares.unwrap())
                             .or_insert(msg.shares.unwrap());
-                    } else {
+                    } else if asks.contains_key(&msg.orrf.unwrap()) {
                         let del = asks.remove(&msg.orrf.unwrap()).unwrap();
                         ask_spread
                             .entry(del[0])

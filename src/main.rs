@@ -58,7 +58,7 @@ fn main() -> io::Result<()> {
             let process_time = Instant::elapsed(&start_file);
             println!("{:?}", process_time);
 
-            let _c = test_read.process_order_book2();
+            let _c = test_read.process_order_book();
             let order_time = Instant::elapsed(&start_file) - process_time;
             println!("{:?}", order_time);
             let _d = test_read.write_companies(&full_date);
