@@ -1,0 +1,2 @@
+  5 7 * * * /bin/bash -c "ssh -T seanlane@ssh.fsl.byu.edu $HOME/Code/Work/AHT/itch/NASDAQ/cron_download.sh"  &>> $HOME/logs/crontab.log
+ 45 * * * * /bin/bash -c "ssh -T seanlane@ssh.fsl.byu.edu $HOME/Code/Work/AHT/itch/NASDAQ/cron_slurm_add.sh" &>> $HOME/logs/crontab.log

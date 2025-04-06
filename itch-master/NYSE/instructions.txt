@@ -1,0 +1,116 @@
+Author: John Wilson
+
+This is an instruction document for the complete NYSE processing process.
+
+To begin, some initial preparation work is necessary. Since we are
+starting the process over to get all the data files in the right format,
+you need to clear out the existing directory for processed data. The
+directory for a given day is given below:
+
+`~/fsl_groups/fslg_market_data/compute/NYSE/ProcessedData/{Year}/{Day}`
+
+To delete it, navigate one folder up (to the year folder) and type
+`rm -r {Day}`. Don't actually type the brackets, just insert the day name
+there.
+
+You also need to check the status of the raw data, to see if the download
+and preprocessing stage is necessary. The data is found in 
+`~/fsl_groups/fslg_market_data/compute/NYSE/RawData/{Year}/{Day}`
+There should be a zipped file that shows up in red, as well as several
+files that have ticker data for subsets of all the tickers. An example
+day to reference if you want to know what the raw data should look like
+is 030116. If your day looks anything different than that, you will need 
+to start from scratch. Remove the directory completely and start at step
+one below. If your days all look okay, you can just skip to step 5.
+
+
+Once you have ensured that the data is in the right directory and in
+the proper format, you may begin processing.
+
+1)  Navigate to the NYSE processing repository (the one this file is in).
+    All the following steps assume you are in that directory.
+
+2)  First you must download the data. Open the file `nysedata.py` and
+    make sure you understand what arguments it takes and what it does.
+
+3)  Type the following command into the terminal:
+        `python nysedata.py download {month} {year}`
+    {month} and {year} should each be two digit numbers corresponding to 
+    the month and year of analysis, ie Jan is 01, Dec is 12, and 16 is
+    for 2016. This will take some time, and you cannot close or let your
+    computer go to sleep during this time. It is recommended that you open
+    several ssh sessions at the same time (in different windows) so that
+    each window can work on a different month, and all months can be
+    downloaded concurrently.
+
+4)  Once this is done, make sure the days of the month have all the
+    proper data as indicated in the introductory paragraphs of this 
+    document. If there was a problem, alert John. Otherwise, continue.
+
+5)  Open the file `run_processing.py` by typing in `vi run_processing.py`
+    and check which arguments it takes and make sure you understand what it
+    does. Close the file.
+
+6)  If you do not already have one, create a folder for the job output
+    called `slurm_files`. This can be done by typing `mkdir slurm_files`
+    into your command line. If you do have one, make sure it is empty
+    by typing `rm slurm_files/*` into command line.
+
+7)  On your command line, type `python run_processing.py {month} {year}` to
+    start the process. Do not actually type the brackets. Make sure month
+    and year are each two digits long.
+
+8)  You will see a bunch of lines print on your screen, telling you which
+    jobs it is submitting to the super computer's job managing system. Once
+    this is done (it may take a while since there are about 21 jobs) you
+    can check the status of your jobs by typing `squeue -u {Username}`.
+    This will show you each job you have on the queue, and if it is 
+    running or pending while the computer allocates nodes for it to run.
+    If your queue is empty, it means that processing has finished.
+
+9)  Once all your jobs are finished, make sure there were no errors. Any
+    error output can be found in the job output files. Jobs with no errors
+    will have an empty error output file. To find the error output files
+    which are not empty, type 
+        `du -a slurm_files/*.err | sort -n -r | head -n 10`
+    This will show you the 10 largest error output files. If the largest
+    of these files has more than 0 bytes in it, some error occurred.
+    Determine if the error was fatal or not. If it is fatal and you don't
+    know how to resolve it, contact John or Dr. Condie. If it was not
+    fatal or no error occured, move on the the next step.
+
+10) Empty your slurm_files folder by typing `rm slurm_files/*` into
+    command line.
+
+11) Open the file `run_ob.py` by typing in `vi run_ob.py` and check which
+    arguments it takes and make sure you understand what it does. Close
+    the file.
+
+12) On your command line, type `python run_ob.py {month} {year}` to start 
+    the process. Do not actually type the brackets. Make sure month and
+    year are each two digits long.
+
+13) You will see a bunch of lines print on your screen, telling you which
+    jobs it is submitting to the super computer's job managing system. Once
+    this is done (it may take a while since there are about 3000 jobs) you
+    can check the status of your jobs by typing `squeue -u {Username}`.
+    This will show you each job you have on the queue, and if it is 
+    running or pending while the computer allocates nodes for it to run.
+    If your queue is empty, it means that processing has finished.
+
+14) Once all your jobs are finished, make sure there were no errors. Any
+    error output can be found in the job output files. Jobs with no errors
+    will have an empty error output file. To find the error output files
+    which are not empty, type 
+        `du -a slurm_files/*.err | sort -n -r | head -n 10`
+    This will show you the 10 largest error output files. If the largest
+    of these files has more than 0 bytes in it, some error occurred.
+    Determine if the error was fatal or not. If it is fatal and you don't
+    know how to resolve it, contact John or Dr. Condie. If it was not
+    fatal or no error occured, move on the the next step.
+
+15) Empty your slurm_files folder by typing `rm slurm_files/*` into
+    command line.
+
+16) Move on to the next month, or let John or Dr. Condie know that
+    you have finished.
